@@ -1,0 +1,4 @@
+include LICENSE
+include README.rst
+recursive-include audit_trail/static *
+recursive-include audit_trail/templates *
