@@ -1,0 +1,55 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+{% load static %}
+{% load extra_tags %}
+{% block extrastyle %}
+    <link rel="stylesheet" type="text/css" href="{% static 'audit_trail/style.css' %}" />
+{% endblock %}
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ module_name }}</a>
+&rsaquo; <a href="{% url opts|admin_urlname:'change' object.pk|admin_urlquote %}">{{ object|truncatewords:"18" }}</a>
+&rsaquo; {% trans 'History' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+<div class="module">
+{% if action_list %}
+    {% regroup action_list by transacted_on as actions %}
+    <table id="change-history">
+        <thead>
+        <tr>
+            <th scope="col">{% trans 'Date/time' %}</th>
+            <th scope="col">{% trans 'User' %}</th>
+            <th scope="col">{% trans 'Action' %}</th>
+            <th scope="col">{% trans 'Field' %}</th>
+            <th scope="col">{% trans 'Previous Value' %}</th>
+            <th scope="col">{% trans 'New Value' %}</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for action in actions %}
+          {% for act in action.list %}
+          <tr>
+ 	        {% ifchanged action.grouper %}<th scope="row" rowspan={{ action.list|length }}>{{ action.grouper|date:"DATETIME_FORMAT" }}</th> {% endifchanged %}
+	    
+	        {% ifchanged act.transacted_by %} <td rowspan={{ action.list|length }}>{{ act.transacted_by }}</td> {% endifchanged %}
+	        {% ifchanged act.transactoin_type %} <td rowspan={{ action.list|length }}>{{ act.transaction_type|get_full_name }}</td> {% endifchanged %}
+ 	        <td>{{ act.field_name }}</td> 
+	        <td style="color:red;">{{ act.previous_val|render:act.previous_val_type }}</td>
+            <td style="color:green;">{{ act.current_val|render:act.current_val_type }}</td>
+          </tr>
+	  {% endfor %}
+        {% endfor %}
+        </tbody>
+    </table>
+{% else %}
+    <p>{% trans "This object doesn't have a change history." %}</p>
+{% endif %}
+</div>
+</div>
+{% endblock %}
