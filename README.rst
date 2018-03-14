@@ -2,24 +2,34 @@
 Audit Trail
 ===========
 
-Audit trail is a simple Django app to track the database changes in any application.
+Audit trail is a simple Django app to track the database changes and maintain history in any application. It also provide history for many_to_many fields, with ready admin page.
 
-
-Detailed documentation is in the "docs" directory.
 
 Quick start
 -----------
+1. Install django-model-audit::
 
-1. Add "audit_trail" to your INSTALLED_APPS setting like this::
+       pip install django-model-audit
+
+2. Add "audit_trail" to your INSTALLED_APPS::
 
        INSTALLED_APPS = [
                ...
               'audit_trail',
        ]
 
-2. Run `python manage.py migrate` to create the audit_trail models.
+3. Add Middlewre::
+       
+       MIDDLEWARE = [
+              ...
+              'audit_trail.middleware.AuditMiddleware'
+       ]
 
-3. To maintain audits of model just add an AuditTrail to that model and also add manager to it like this::
+4. Run Migrate::
+
+       python manage.py migrate
+
+5. Add an AuditTrail and manager to model you want to create history::
 
         from audit_trail.history import AuditTrail, AuditManager
         class MyModel(models.Model):
@@ -30,9 +40,9 @@ Quick start
             objects = AuditManager.as_manager()
 
             class Meta:
-                display_format = '{model_name.field_name}--{model_name.another_field_name}' #You can make string format in python like this.
+                display_format = '{model_name.field_name}'
 
-4. To add admin screen for audit simply inherit AuditTrailLogAdmin in your model admin like below::
+5. To add admin screen for audit simply inherit AuditTrailLogAdmin in your model admin::
    
         from audit_trail.admin import AuditTrailLogAdmin
         class MyModelAdmin(AuditTrailLogAdmin):
@@ -41,7 +51,7 @@ Quick start
    Visit django model admin screen to get the history of particular
    model(Click on History button in that screen).
 
-5. To get audit trail of many_to_many fields just send signal from your AppConfig class' ready method like this::
+6. To get audit trail of many_to_many fields just send signal from your AppConfig class' ready method::
         
         from audit_trail.signals import audit_m2m_ready
 
@@ -51,9 +61,9 @@ Quick start
                 audit_m2m.ready.send(sender=self.__class__)
                 ...
 
-6. To get audit trail logs in your django app import and call function
-   get_history_list() like this::
+7. To get audit trail logs in your django app import and call function
+   get_audit_trail() like this::
 
-        from audit_trail.admin import get_history_list
-        get_history_list(model_name, object_id)
+        from audit_trail.admin import get_audit_trail
+        get_audit_trail(model_name, object_id)
 
