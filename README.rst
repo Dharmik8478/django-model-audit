@@ -42,7 +42,7 @@ Quick start
             class Meta:
                 display_format = '{model_name.field_name}'
 
-5. To add admin screen for audit simply inherit AuditTrailLogAdmin in your model admin::
+6. To add admin screen for audit simply inherit AuditTrailLogAdmin in your model admin::
    
         from audit_trail.admin import AuditTrailLogAdmin
         class MyModelAdmin(AuditTrailLogAdmin):
@@ -51,7 +51,7 @@ Quick start
    Visit django model admin screen to get the history of particular
    model(Click on History button in that screen).
 
-6. To get audit trail of many_to_many fields just send signal from your AppConfig class' ready method::
+7. To get audit trail of many_to_many fields just send signal from your AppConfig class' ready method::
         
         from audit_trail.signals import audit_m2m_ready
 
@@ -61,7 +61,7 @@ Quick start
                 audit_m2m.ready.send(sender=self.__class__)
                 ...
 
-7. To get audit trail logs in your django app import and call function
+8. To get audit trail logs in your django app import and call function
    get_audit_trail() like this::
 
         from audit_trail.admin import get_audit_trail
