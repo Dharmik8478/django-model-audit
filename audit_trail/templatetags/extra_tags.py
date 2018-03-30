@@ -10,7 +10,10 @@ register = template.Library()
 
 @register.filter(needs_autoescape=True)
 def render(text, text_type, autoescape=True):
-    text = text.decode()
+    try:
+        text = text.decode()
+    except AttributeError:
+        text = text.tobytes().decode()
     if text == 'None' or not text:
         template = '-'
     elif text_type == 'ManyToMany':
