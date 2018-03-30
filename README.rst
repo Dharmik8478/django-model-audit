@@ -42,10 +42,10 @@ Quick start
             class Meta:
                 display_format = '{model_name.field_name}'
 
-6. To add admin screen for audit simply inherit AuditTrailLogAdmin in your model admin::
+6. To add admin screen for audit simply inherit AuditTrailAdmin in your model admin::
    
-        from audit_trail.admin import AuditTrailLogAdmin
-        class MyModelAdmin(AuditTrailLogAdmin):
+        from audit_trail.admin import AuditTrailAdmin
+        class MyModelAdmin(AuditTrailAdmin):
             ...
 
    Visit django model admin screen to get the history of particular
