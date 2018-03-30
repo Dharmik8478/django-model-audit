@@ -10,6 +10,7 @@ from django.utils.text import capfirst
 from django.core.exceptions import PermissionDenied
 from django.template.response import TemplateResponse
 from django.conf import settings
+from django.contrib.auth import get_user_model
 
 
 class AuditTrailAdmin(admin.ModelAdmin):
@@ -48,7 +49,7 @@ def get_audit_trail(model_name, object_id):
                         xaction__xaction_parent_entity_child_fields__field_val=object_id))).\
                     order_by('-xaction__ts').\
                     annotate(transacted_on=F('xaction__ts'),
-                                transacted_by=F('xaction__user__username'),
+                                transacted_by=F('xaction__user__'+get_user_model().USERNAME_FIELD),
                                 transaction_type=F('xaction__xaction_type'),
                                 field_name=F('field_id__name'),
                                 current_val=F('curr_val__data'),
