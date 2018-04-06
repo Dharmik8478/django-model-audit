@@ -7,6 +7,7 @@ import logging
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models, transaction
+from django.utils import six
 
 from audit_trail.common import DictDiffer
 from audit_trail.signals import audit_ready, audit_m2m_ready
@@ -25,26 +26,76 @@ from audit_trail.models import (Entity, Field, StorageBin, FieldDiff,
 
 
 class AuditManager(models.QuerySet):
+
     def update(self, *args, **kwargs):
+        if args:
+            user_id = args[0]
+            args = ()
+        else:
+            user_id = None
+
         prev_val_dict ={}
         curr_val_dict = {}
         for obj in self:
-            prev_val = {}
-            curr_val = {}
-            for field, value in kwargs.items():
-                if field in [f.name for f in self.model._meta.get_fields()]:
-                    prev_val.update({field: getattr(obj, field)})
-                    curr_val.update({field: value})
+            prev_val, curr_val = self._get_audit_values(obj, kwargs)
             prev_val_dict.update({obj.pk: prev_val})
             curr_val_dict.update({obj.pk: curr_val})
 
-        super(AuditManager, self).update(*args, **kwargs)
+        return_val = super(AuditManager, self).update(*args, **kwargs)
 
         for key in prev_val_dict.keys():
             audit_trail = CoreAudit(self.model, obj, 'U',
                                     prev_val_dict.get(key),
-                                    curr_val_dict.get(key))
+                                    curr_val_dict.get(key),
+                                    user_id)
             audit_trail.create_audit()
+        return return_val
+
+    def update_or_create(self, *args, defaults=None, **kwargs):
+        """
+        Looks up an object with the given kwargs, updating one with defaults
+        if it exists, otherwise creates a new one.
+        Returns a tuple (object, created), where created is a boolean
+        specifying whether an object was created.
+        """
+        if args:
+            user_id = args[0]
+            args = ()
+        else:
+            user_id = None
+        defaults = defaults or {}
+        lookup, params = self._extract_model_params(defaults, **kwargs)
+        self._for_write = True
+        with transaction.atomic(using=self.db):
+            try:
+                obj = self.select_for_update().get(**lookup)
+            except self.model.DoesNotExist:
+                obj, created = self._create_object_from_params(lookup, params)
+                if created:
+                    prev_val, curr_val = self._get_audit_values(obj, {**defaults, **kwargs})
+                    audit_trail = CoreAudit(self.model, obj, 'I',
+                                    {},
+                                    curr_val,
+                                    user_id)
+                    audit_trail.create_audit()
+                    return obj, created
+            prev_val, curr_val = self._get_audit_values(obj, {**defaults, **kwargs})
+            for k, v in six.iteritems(defaults):
+                setattr(obj, k, v() if callable(v) else v)
+            obj.save(using=self.db)
+            audit_trail = CoreAudit(self.model, obj, 'U',
+                                    prev_val, curr_val, user_id)
+            audit_trail.create_audit()
+        return obj, False
+    
+    def _get_audit_values(self, obj, data):
+        prev_val = {}
+        curr_val = {}
+        for field, value in data.items():
+            if field in [f.name for f in self.model._meta.get_fields()]:
+                prev_val.update({field: getattr(obj, field)})
+                curr_val.update({field: value})
+        return prev_val, curr_val
 
 
 class AuditTrail(object):
@@ -128,7 +179,7 @@ class AuditTrail(object):
 
 class CoreAudit(object):
 
-    def __init__(self, audit_model, obj, xaction_type, prev_val, curr_val, *args, **kwargs):
+    def __init__(self, audit_model, obj, xaction_type, prev_val, curr_val, user_id=None, *args, **kwargs):
         with transaction.atomic():
             self.audit_model = audit_model
             self.entity = Entity.objects.get(entity_name=audit_model._meta.model_name)
@@ -137,12 +188,18 @@ class CoreAudit(object):
             self.prev_val = prev_val
             self.curr_val = curr_val
             self.request = AuditMiddleware.get_request()
-            if self.valid_request():
+            self.user_id = self._get_user_id(user_id)
+            if self.user_id:
                 self.get_diff()
                 self.make_xaction()
 
     def valid_request(self):
         return self.request and not self.request.user.is_anonymous()
+    
+    def _get_user_id(self, user_id):
+        if not self.valid_request():
+            return user_id
+        return self.request.user.id
 
     def get_diff(self):
         differ = DictDiffer(self.curr_val, self.prev_val)
@@ -153,17 +210,17 @@ class CoreAudit(object):
                                                 xaction_type=self.xaction_type,
                                               display_text=self.audit_model._meta.display_format.format(**{self.audit_model._meta.model_name:self.obj}),
                                                 pfield_val=self.obj.pk,
-                                                user=self.request.user)
+                                                user_id=self.user_id)
 
     def create_audit(self):
-        if self.valid_request():
+        if self.user_id:
             for field in filter(lambda x: x.name in self.difference,
                                 self.audit_model._meta.fields):
                 self.make_field_diff(field)
             self.check_parent()
 
     def create_m2m_audit(self):
-        if self.valid_request():
+        if self.user_id:
             for field in filter(lambda x: x.name in self.difference,
                                 self.audit_model._meta.get_fields()):
                 self.make_field_diff(field)
