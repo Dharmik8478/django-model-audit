@@ -1,7 +1,7 @@
 from django.contrib import admin
+from django.core.urlresolvers import reverse
 from django.db.models.query_utils import Q
 from django.db.models.expressions import F
-from django.db.models.aggregates import Count
 from django.contrib.admin.utils import unquote
 from django.apps import apps
 from django.utils.translation import ugettext_lazy as _
@@ -9,11 +9,22 @@ from django.utils.encoding import force_text
 from django.utils.text import capfirst
 from django.core.exceptions import PermissionDenied
 from django.template.response import TemplateResponse
-from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.template.loader import render_to_string
 
 
 class AuditTrailAdmin(admin.ModelAdmin):
+    
+    def audit_col(self, obj):
+        opts =  self.model._meta
+        app_label = opts.app_label
+        model_name = opts.model_name
+        history_url = reverse('admin:'+app_label+'_'+model_name+'_history', args=(obj.id,))
+        return render_to_string('audit_trail/admin_cl_icon.html', {'history_url': history_url})
+    
+    audit_col.allow_tags = True
+    audit_col.short_description = _('History')
+    
     def history_view(self, request, object_id, extra_context=None):
         model = self.model
 
