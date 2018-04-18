@@ -120,7 +120,7 @@ class AuditTrail(object):
                                                        entity=self.entity)
 
         def m2m_handler(sender, **kwargs):
-            for field in filter(lambda x:x.many_to_many, cls._meta.get_fields()):
+            for field in filter(lambda x:x.many_to_many, cls._meta.local_many_to_many):
                m2m_changed.connect(m2m_signal_handler,
                                     sender=getattr(getattr(cls, field.name),
                                                    'through'))
@@ -182,6 +182,7 @@ class CoreAudit(object):
     def __init__(self, audit_model, obj, xaction_type, prev_val, curr_val, user_id=None, *args, **kwargs):
         with transaction.atomic():
             self.audit_model = audit_model
+            self.managed_fields = list(filter(lambda x: x.name in self.audit_model._meta.managed_fields, self.audit_model._meta.get_fields()) if hasattr(self.audit_model._meta, 'managed_fields') else self.audit_model._meta.get_fields())
             self.entity = Entity.objects.get(entity_name=audit_model._meta.model_name)
             self.xaction_type = xaction_type
             self.obj = obj
@@ -215,14 +216,14 @@ class CoreAudit(object):
     def create_audit(self):
         if self.user_id:
             for field in filter(lambda x: x.name in self.difference,
-                                self.audit_model._meta.fields):
+                                self.managed_fields):
                 self.make_field_diff(field)
             self.check_parent()
 
     def create_m2m_audit(self):
         if self.user_id:
             for field in filter(lambda x: x.name in self.difference,
-                                self.audit_model._meta.get_fields()):
+                                self.managed_fields):
                 self.make_field_diff(field)
             self.check_parent()
 
