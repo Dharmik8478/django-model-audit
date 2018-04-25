@@ -4,10 +4,13 @@ Created on 02-Feb-2017
 @author: dharmikp
 '''
 import logging
+import getpass
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models, transaction
 from django.utils import six
+from django.shortcuts import get_object_or_404
+from django.contrib.auth import get_user_model
 
 from audit_trail.common import DictDiffer
 from audit_trail.signals import audit_ready, audit_m2m_ready
@@ -28,12 +31,6 @@ from audit_trail.models import (Entity, Field, StorageBin, FieldDiff,
 class AuditManager(models.QuerySet):
 
     def update(self, *args, **kwargs):
-        if args:
-            user_id = args[0]
-            args = ()
-        else:
-            user_id = None
-
         prev_val_dict ={}
         curr_val_dict = {}
         for obj in self:
@@ -46,8 +43,8 @@ class AuditManager(models.QuerySet):
         for key in prev_val_dict.keys():
             audit_trail = CoreAudit(self.model, obj, 'U',
                                     prev_val_dict.get(key),
-                                    curr_val_dict.get(key),
-                                    user_id)
+                                    curr_val_dict.get(key)
+                                    )
             audit_trail.create_audit()
         return return_val
 
@@ -58,11 +55,6 @@ class AuditManager(models.QuerySet):
         Returns a tuple (object, created), where created is a boolean
         specifying whether an object was created.
         """
-        if args:
-            user_id = args[0]
-            args = ()
-        else:
-            user_id = None
         defaults = defaults or {}
         lookup, params = self._extract_model_params(defaults, **kwargs)
         self._for_write = True
@@ -74,9 +66,7 @@ class AuditManager(models.QuerySet):
                 if created:
                     prev_val, curr_val = self._get_audit_values(obj, {**defaults, **kwargs})
                     audit_trail = CoreAudit(self.model, obj, 'I',
-                                    {},
-                                    curr_val,
-                                    user_id)
+                                    {}, curr_val)
                     audit_trail.create_audit()
                     return obj, created
             prev_val, curr_val = self._get_audit_values(obj, {**defaults, **kwargs})
@@ -84,7 +74,7 @@ class AuditManager(models.QuerySet):
                 setattr(obj, k, v() if callable(v) else v)
             obj.save(using=self.db)
             audit_trail = CoreAudit(self.model, obj, 'U',
-                                    prev_val, curr_val, user_id)
+                                    prev_val, curr_val)
             audit_trail.create_audit()
         return obj, False
     
@@ -93,9 +83,18 @@ class AuditManager(models.QuerySet):
         curr_val = {}
         for field, value in data.items():
             if field in [f.name for f in self.model._meta.get_fields()]:
-                prev_val.update({field: getattr(obj, field)})
+                if obj:
+                    prev_val.update({field: getattr(obj, field)})
                 curr_val.update({field: value})
         return prev_val, curr_val
+    
+    def create(self, *args, **kwargs):
+        prev_val, curr_val = self._get_audit_values(None, kwargs)
+        obj = super(AuditManager, self).create(**kwargs)
+        audit_trail = CoreAudit(self.model, obj, 'I',
+                                prev_val, curr_val)
+        audit_trail.create_audit()
+        return obj
 
 
 class AuditTrail(object):
@@ -179,7 +178,7 @@ class AuditTrail(object):
 
 class CoreAudit(object):
 
-    def __init__(self, audit_model, obj, xaction_type, prev_val, curr_val, user_id=None, *args, **kwargs):
+    def __init__(self, audit_model, obj, xaction_type, prev_val, curr_val, *args, **kwargs):
         with transaction.atomic():
             self.audit_model = audit_model
             self.managed_fields = list(filter(lambda x: x.name in self.audit_model._meta.managed_fields, self.audit_model._meta.get_fields()) if hasattr(self.audit_model._meta, 'managed_fields') else self.audit_model._meta.get_fields())
@@ -189,18 +188,21 @@ class CoreAudit(object):
             self.prev_val = prev_val
             self.curr_val = curr_val
             self.request = AuditMiddleware.get_request()
-            self.user_id = self._get_user_id(user_id)
-            if self.user_id:
+            self.user = self._get_user()
+            if self.user:
                 self.get_diff()
                 self.make_xaction()
 
     def valid_request(self):
         return self.request and not self.request.user.is_anonymous()
     
-    def _get_user_id(self, user_id):
+    def _get_user(self):
         if not self.valid_request():
-            return user_id
-        return self.request.user.id
+            user_model = get_user_model()
+            username_field = user_model.USERNAME_FIELD
+            user = get_object_or_404(user_model, **{username_field:getpass.getuser()})
+            return user
+        return self.request.user
 
     def get_diff(self):
         differ = DictDiffer(self.curr_val, self.prev_val)
@@ -211,21 +213,19 @@ class CoreAudit(object):
                                                 xaction_type=self.xaction_type,
                                               display_text=self.audit_model._meta.display_format.format(**{self.audit_model._meta.model_name:self.obj}),
                                                 pfield_val=self.obj.pk,
-                                                user_id=self.user_id)
+                                                user=self.user)
 
     def create_audit(self):
-        if self.user_id:
-            for field in filter(lambda x: x.name in self.difference,
-                                self.managed_fields):
-                self.make_field_diff(field)
-            self.check_parent()
+        for field in filter(lambda x: x.name in self.difference,
+                            self.managed_fields):
+            self.make_field_diff(field)
+        self.check_parent()
 
     def create_m2m_audit(self):
-        if self.user_id:
-            for field in filter(lambda x: x.name in self.difference,
-                                self.managed_fields):
-                self.make_field_diff(field)
-            self.check_parent()
+        for field in filter(lambda x: x.name in self.difference,
+                            self.managed_fields):
+            self.make_field_diff(field)
+        self.check_parent()
 
     def make_field_diff(self, field):
         if hasattr(self.audit_model._meta, 'sensitive_fields') and field.name in self.audit_model._meta.sensitive_fields:
@@ -258,4 +258,3 @@ class CoreAudit(object):
             XactionParentEntityChildFieldMap.objects.create(xaction=self.xaction,
                                                             parent_entity_child_fields=parent_child_mapping,
                                                             field_val=self.__getattribute__(parent_field))
-
