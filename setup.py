@@ -9,7 +9,7 @@ os.chdir(os.path.normpath(os.path.join(os.path.abspath(__file__), os.pardir)))
 
 setup(
     name='django-model-audit',
-    version='0.1',
+    version='0.1.7',
     packages=find_packages(),
     include_package_data=True,
     license='BSD License',
