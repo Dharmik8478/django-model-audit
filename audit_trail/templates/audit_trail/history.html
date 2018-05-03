@@ -50,6 +50,38 @@
 {% else %}
     <p>{% trans "This object doesn't have a change history." %}</p>
 {% endif %}
+
+    <p class="paginator">
+
+    {% if action_list.number|add:"-5" > 0 %}
+      <a href="?page=1">1</a>
+    {% endif %}
+
+    {% if action_list.number|add:"-5" > 1 %}
+      <span>&hellip;</span>
+    {% endif %}
+
+    {% for page_num in action_list.paginator.page_range %}
+      {% if action_list.number == page_num %}
+        <span class="this-page">{{ page_num }}</span>
+      {% else %}
+        {% if page_num > action_list.number|add:"-5" and page_num < action_list.number|add:"5" %}
+          <a href="?page={{ page_num }}">{{ page_num }}</a>
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+
+    {% if action_list.number|add:"5" < action_list.paginator.num_pages %}
+      <span>&hellip;</span>
+    {% endif %}
+
+    {% if action_list.number|add:"4" < action_list.paginator.num_pages %}
+      <a href="?page={{ action_list.paginator.num_pages }}">{{ action_list.paginator.num_pages }}</a>
+    {% endif %}
+    &nbsp;&nbsp;&nbsp;
+    {{ action_list.paginator.count }} changes
+
+  </p>
 </div>
 </div>
 {% endblock %}
