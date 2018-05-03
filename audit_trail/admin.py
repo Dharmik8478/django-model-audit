@@ -1,8 +1,10 @@
 from django.contrib import admin
 from django.core.urlresolvers import reverse
+from django.core.paginator import Paginator
 from django.db.models.query_utils import Q
 from django.db.models.expressions import F
 from django.contrib.admin.utils import unquote
+from django.conf import settings
 from django.apps import apps
 from django.utils.translation import ugettext_lazy as _
 from django.utils.encoding import force_text
@@ -27,20 +29,31 @@ class AuditTrailAdmin(admin.ModelAdmin):
     
     def history_view(self, request, object_id, extra_context=None):
         model = self.model
-
         obj = self.get_object(request, unquote(object_id))
+        
+        if obj is None:
+            return self._get_obj_does_not_exist_redirect(request, model._meta, object_id)
 
         if not self.has_change_permission(request, obj):
             raise PermissionDenied
 
         opts =  model._meta
         app_label = opts.app_label
-        action_list = get_audit_trail(model._meta.model_name, object_id)
+        action_list = get_audit_qs(model._meta.model_name, object_id)
+        page = request.GET.get('page', 1)
+        page_obj = Paginator(action_list, self.list_per_page).page(page)
+        page_obj.object_list = page_obj.object_list.\
+                    values('transacted_on', 'transacted_by',
+                           'transaction_type', 'field_name',
+                           'current_val', 'current_val_type',
+                           'previous_val', 'previous_val_type',
+                           'xaction__display_text'
+                          )
 
         context = dict(
             self.admin_site.each_context(request),
-            title=_('History: %s' % force_text(obj)),
-            action_list=action_list,
+            title=_('Change History: %s' % force_text(obj)),
+            action_list=page_obj,
             module_name=capfirst(force_text(opts.verbose_name_plural)),
             object=obj,
             opts=opts,
@@ -53,7 +66,7 @@ class AuditTrailAdmin(admin.ModelAdmin):
         return TemplateResponse(request, 'audit_trail/history.html', context)
 
 
-def get_audit_trail(model_name, object_id):
+def get_audit_qs(model_name, object_id):
     FieldDiff = apps.get_model('audit_trail', 'FieldDiff')
     return FieldDiff.objects.filter((Q(xaction__entity__entity_name=model_name, xaction__pfield_val=object_id)
                     | Q(xaction__xaction_parent_entity_child_fields__parent_entity_child_fields__parent_entity__entity_name=model_name,
@@ -67,15 +80,13 @@ def get_audit_trail(model_name, object_id):
                                 current_val_type=F('curr_val__content_type__type'),
                                 previous_val=F('prev_val__data'),
                                 previous_val_type=F('prev_val__content_type__type')
-				).\
-                    values('transacted_on',
-                           'transacted_by',
-                           'transaction_type',
-                           'field_name',
-                           'current_val',
-                           'current_val_type',
-                           'previous_val',
-                           'previous_val_type',
-                           'xaction__display_text'
-                          )
+				            )
 
+
+def get_audit_trail(model_name, object_id):
+    return get_qs.values('transacted_on', 'transacted_by',
+                         'transaction_type', 'field_name',
+                         'current_val', 'current_val_type',
+                         'previous_val', 'previous_val_type',
+                         'xaction__display_text'
+                        )
