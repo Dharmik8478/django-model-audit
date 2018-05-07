@@ -230,6 +230,11 @@ class CoreAudit(object):
     def make_field_diff(self, field):
         if hasattr(self.audit_model._meta, 'sensitive_fields') and field.name in self.audit_model._meta.sensitive_fields:
             self.curr_val[field.name] = self.prev_val[field.name] = '( Hidden )'
+        if self.audit_model._meta.get_field(field.name).choices:
+            self.curr_val[field.name] = dict(self.audit_model._meta.get_field(field.name).choices)\
+                                            .get(self.curr_val[field.name])
+            self.prev_val[field.name] = dict(self.audit_model._meta.get_field(field.name).choices)\
+                                            .get(self.prev_val[field.name])
         content_type = field.get_internal_type().replace('Field', '')
         content_type, created = ContentType.objects.get_or_create(type=content_type)
         audit_field = Field.objects.get(entity=self.entity, name=field.name)
